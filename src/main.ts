@@ -35,6 +35,7 @@ class KoodevHock {
   private dragStartPoint: Vector3 | null = null;
   private isDragging: boolean = false;
   private power: number = 0;
+  private timerInterval: any;
   private state: GameState = {
     round: 1,
     playerTurn: true,
@@ -43,7 +44,6 @@ class KoodevHock {
     timer: TIMEOUT_SECONDS,
     isGameOver: false
   };
-  private timerInterval: any;
 
   constructor() {
     this.canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
@@ -80,16 +80,16 @@ class KoodevHock {
 
   setupCamera() {
     const cam = new ArcRotateCamera('cam', -Math.PI/2, Math.PI/3, 15, new Vector3(0, 1, 20), this.scene);
+    cam.lowerRadiusLimit = 10;
+    cam.upperRadiusLimit = 30;
     cam.attachControl(this.canvas, true);
-    cam.lowerBetaLimit = 0.5;
-    cam.upperBetaLimit = Math.PI/2.2;
   }
 
   createEnvironment() {
     const ground = MeshBuilder.CreateGround('ground', { width: FIELD_WIDTH, height: FIELD_LENGTH }, this.scene);
-    const mat = new StandardMaterial('groundMat', this.scene);
-    mat.diffuseColor = new Color3(0.1, 0.4, 0.8);
-    ground.material = mat;
+    const groundMat = new StandardMaterial('groundMat', this.scene);
+    groundMat.diffuseColor = new Color3(0.1, 0.4, 0.7);
+    ground.material = groundMat;
     new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.8 }, this.scene);
   }
 
@@ -130,7 +130,7 @@ class KoodevHock {
     mat.diffuseColor = Color3.White();
     this.ball.material = mat;
     this.ballAggregate = new PhysicsAggregate(this.ball, PhysicsShapeType.SPHERE, { mass: 0.16, friction: 0.4, restitution: 0.5 }, this.scene);
-    this.goalTrigger.actionManager?.registerAction(
+    this.goalTrigger.actionManager.registerAction(
       new ExecuteCodeAction(
         { trigger: ActionManager.OnIntersectionEnterTrigger, parameter: this.ball },
         () => this.onGoalScored()
@@ -139,26 +139,26 @@ class KoodevHock {
   }
 
   setupInputs() {
-    this.scene.onPointerObservable.add((info) => {
-      if (this.state.shotTaken || this.state.isGameOver) return;
-      switch (info.type) {
+    this.scene.onPointerObservable.add((pointerInfo) => {
+      const pickInfo = this.scene.pick(this.scene.pointerX, this.scene.pointerY);
+      switch (pointerInfo.type) {
         case PointerEventTypes.POINTERDOWN:
-          if (info.pickInfo?.hit && info.pickInfo.pickedMesh?.name === 'ground') {
+          if (pickInfo?.hit && !this.state.shotTaken) {
+            this.dragStartPoint = pickInfo.pickedPoint;
             this.isDragging = true;
-            this.dragStartPoint = info.pickInfo.pickedPoint!;
             document.getElementById('power-container')!.style.display = 'block';
           }
           break;
         case PointerEventTypes.POINTERMOVE:
-          if (this.isDragging && this.dragStartPoint && info.pickInfo?.pickedPoint) {
-            const dist = Vector3.Distance(this.dragStartPoint, info.pickInfo.pickedPoint);
+          if (this.isDragging && this.dragStartPoint && pickInfo?.pickedPoint) {
+            const dist = Vector3.Distance(this.dragStartPoint, pickInfo.pickedPoint);
             this.power = Math.min(dist / 5, 1);
             document.getElementById('power-bar')!.style.width = `${this.power * 100}%`;
           }
           break;
         case PointerEventTypes.POINTERUP:
-          if (this.isDragging && this.dragStartPoint && info.pickInfo?.pickedPoint) {
-            this.shoot(this.dragStartPoint, info.pickInfo.pickedPoint);
+          if (this.isDragging && this.dragStartPoint && pickInfo?.pickedPoint) {
+            this.shoot(this.dragStartPoint, pickInfo.pickedPoint);
           }
           this.isDragging = false;
           this.dragStartPoint = null;
@@ -171,6 +171,13 @@ class KoodevHock {
   shoot(start: Vector3, end: Vector3) {
     if (this.state.shotTaken) return;
     this.state.shotTaken = true;
+    
+    // Hide instructions after shooting
+    const shootHint = document.getElementById('shoot-hint');
+    const gameInstructions = document.getElementById('game-instructions');
+    if (shootHint) shootHint.style.display = 'none';
+    if (gameInstructions) gameInstructions.style.display = 'none';
+    
     const direction = start.subtract(end).normalize();
     if (direction.z < 0) direction.z *= -1;
     const lift = this.power * 0.5;
@@ -180,23 +187,29 @@ class KoodevHock {
   }
 
   startRound() {
+    this.resetBall();
     this.state.shotTaken = false;
     this.state.timer = TIMEOUT_SECONDS;
-    this.resetBall();
-    this.startTimer();
-  }
-
-  startTimer() {
-    clearInterval(this.timerInterval);
+    this.goalie.position.x = 0;
+    
+    // Show instructions at start of round
+    const shootHint = document.getElementById('shoot-hint');
+    const gameInstructions = document.getElementById('game-instructions');
+    if (shootHint) shootHint.style.display = 'block';
+    if (gameInstructions) gameInstructions.style.display = 'block';
+    
+    // Hide any previous message
+    const messageBox = document.getElementById('message-box');
+    if (messageBox) messageBox.style.display = 'none';
+    
+    this.updateUI();
     this.timerInterval = setInterval(() => {
-      if (this.state.shotTaken && this.state.timer > 0) return;
-      this.state.timer -= 0.1;
-      document.getElementById('timer')!.innerText = this.state.timer.toFixed(1);
+      this.state.timer--;
+      document.getElementById('timer')!.innerText = this.state.timer.toString();
       if (this.state.timer <= 0) {
-        clearInterval(this.timerInterval);
         this.endRound('MISS');
       }
-    }, 100);
+    }, 1000);
   }
 
   onGoalScored() {
@@ -219,6 +232,16 @@ class KoodevHock {
   endRound(result: 'GOAL' | 'MISS') {
     clearInterval(this.timerInterval);
     if (this.state.isGameOver) return;
+    
+    // Show result message
+    const messageBox = document.getElementById('message-box');
+    const messageText = document.getElementById('message-text');
+    if (messageBox && messageText) {
+      messageText.innerText = result;
+      messageBox.style.display = 'block';
+      messageBox.className = result === 'GOAL' ? 'goal' : 'miss';
+    }
+    
     if (result === 'GOAL') this.state.scores.home++;
     this.updateUI();
     setTimeout(() => {

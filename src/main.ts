@@ -343,10 +343,15 @@ class KoodevHock {
 }
 
 // Start game when DOM is ready
+// Create global game instance and expose startGame function
+let gameInstance: KoodevHock | null = null;
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    new KoodevHock();
+    gameInstance = new KoodevHock();
+    (window as any).startGame = () => gameInstance?.startGame();
   });
 } else {
-  new KoodevHock();
+  gameInstance = new KoodevHock();
+  (window as any).startGame = () => gameInstance?.startGame();
 }

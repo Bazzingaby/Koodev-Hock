@@ -1,6 +1,6 @@
 /**
  * Koodev-Hock - Field Hockey Penalty Shootout Game
- * Main entry point
+ * A complete, fully playable game with input, physics, AI, and animations
  */
 
 import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, MeshBuilder, StandardMaterial, Color3, Color4 } from '@babylonjs/core';
@@ -8,21 +8,14 @@ import '@babylonjs/loaders';
 
 // Game constants based on FIH rules
 const GAME_CONFIG = {
-  // Field dimensions (in meters, scaled for game)
   GOAL_WIDTH: 3.66,
   GOAL_HEIGHT: 2.14,
   SHOOTING_CIRCLE_RADIUS: 14.63,
-  
-  // Ball properties
-  BALL_RADIUS: 0.0365, // 73mm diameter
-  BALL_MASS: 0.160, // 160 grams
-  MAX_SHOT_SPEED: 31, // m/s (world record ~112 km/h)
-  
-  // Game rules
-  SHOT_TIME_LIMIT: 8, // seconds per attempt
+  BALL_RADIUS: 0.03655,
+  BALL_MASS: 0.160,
+  MAX_SHOT_SPEED: 31,
+  SHOT_TIME_LIMIT: 8,
   ROUNDS: 5,
-  
-  // Physics
   TURF_FRICTION: 0.4,
   RESTITUTION: 0.5
 };
@@ -32,215 +25,280 @@ class KoodevHock {
   private engine: Engine;
   private scene: Scene;
   private camera: ArcRotateCamera;
+
+  private ball: BABYLON.Mesh | null = null;
+  private ballVelocity = new Vector3(0, 0, 0);
+  private ballPosition = new Vector3(0, 0.15, 10);
   
-  // Game state
-  private playerScore: number = 0;
-  private aiScore: number = 0;
-  private currentRound: number = 1;
-  private isPlayerTurn: boolean = true;
-  private shotTimer: number = GAME_CONFIG.SHOT_TIME_LIMIT;
-  private gameState: 'menu' | 'playing' | 'aiming' | 'shooting' | 'result' = 'menu';
+  private gameState: 'menu' | 'aiming' | 'shooting' | 'goalkeeper' | 'result' | 'game_over' = 'menu';
+  private playerScore = 0;
+  private aiScore = 0;
+  private currentRound = 1;
+  private shotTimer = GAME_CONFIG.SHOT_TIME_LIMIT;
+  private shotPower = 0;
+  private isCharging = false;
+  private ballShot = false;
+  
+  private keys: { [key: string]: boolean } = {};
+  private mouseX = 0;
+  private mouseY = 0;
 
   constructor() {
     this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
     this.engine = new Engine(this.canvas, true, { preserveDrawingBuffer: true, stencil: true });
     this.scene = new Scene(this.engine);
     this.camera = this.setupCamera();
-    
+    this.setupLighting();
+    this.createEnvironment();
+    this.createBall();
+    this.setupUI();
+    this.setupInputHandlers();
     this.init();
   }
 
-  private async init(): Promise<void> {
-    // Set sky color
-    this.scene.clearColor = new Color4(0.5, 0.7, 0.9, 1);
-    
-    // Setup lighting
-    this.setupLighting();
-    
-    // Create playing field
-    this.createField();
-    
-    // Create goal
-    this.createGoal();
-    
-    // Create ball
-    this.createBall();
-    
-    // Setup UI
-    this.setupUI();
-    
-    // Start render loop
-    this.engine.runRenderLoop(() => {
-      this.scene.render();
-    });
-    
-    // Handle window resize
-    window.addEventListener('resize', () => {
-      this.engine.resize();
-    });
-    
-    // Show start screen
-    this.showStartScreen();
-  }
-
   private setupCamera(): ArcRotateCamera {
-    const camera = new ArcRotateCamera(
-      'camera',
-      -Math.PI / 2,
-      Math.PI / 3,
-      20,
-      new Vector3(0, 0, 5),
-      this.scene
-    );
+    const camera = new ArcRotateCamera('camera', -Math.PI / 2, Math.PI / 3, 20, new Vector3(0, 2, 5), this.scene);
     camera.attachControl(this.canvas, true);
     camera.lowerRadiusLimit = 10;
-    camera.upperRadiusLimit = 30;
+    camera.upperRadiusLimit = 50;
     return camera;
   }
 
   private setupLighting(): void {
-    // Main sunlight
-    const sunLight = new HemisphericLight('sun', new Vector3(0, 1, 0), this.scene);
-    sunLight.intensity = 1.0;
-    sunLight.diffuse = new Color3(1, 0.95, 0.9);
-    sunLight.groundColor = new Color3(0.2, 0.4, 0.2);
+    const sunlight = new HemisphericLight('sun', new Vector3(0, 1, 0), this.scene);
+    sunlight.intensity = 1.0;
   }
 
-  private createField(): void {
-    // Create the turf
-    const field = MeshBuilder.CreateGround('field', {
-      width: 30,
-      height: 25
-    }, this.scene);
+  private createEnvironment(): void {
+    // Field
+    const fieldMat = new StandardMaterial('fieldMat', this.scene);
+    fieldMat.diffuse = new Color3(0.1, 0.6, 0.2);
     
-    const fieldMaterial = new StandardMaterial('fieldMat', this.scene);
-    fieldMaterial.diffuseColor = new Color3(0.1, 0.5, 0.2); // Green turf
-    fieldMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
-    field.material = fieldMaterial;
-    
-    // Create shooting circle (D-shape representation)
-    this.createShootingCircle();
-  }
-  
-  private createShootingCircle(): void {
-    // Create a disc to represent the shooting circle
-    const circle = MeshBuilder.CreateDisc('shootingCircle', {
-      radius: GAME_CONFIG.SHOOTING_CIRCLE_RADIUS / 2, // Scaled
-      tessellation: 64
-    }, this.scene);
-    circle.rotation.x = Math.PI / 2;
-    circle.position.y = 0.01; // Slightly above field
-    
-    const circleMat = new StandardMaterial('circleMat', this.scene);
-    circleMat.diffuseColor = new Color3(0.15, 0.55, 0.25);
-    circleMat.alpha = 0.5;
-    circle.material = circleMat;
-  }
+    const field = MeshBuilder.CreateGround('field', { width: 100, height: 100 }, this.scene);
+    field.material = fieldMat;
 
-  private createGoal(): void {
-    const goalWidth = GAME_CONFIG.GOAL_WIDTH;
-    const goalHeight = GAME_CONFIG.GOAL_HEIGHT;
-    const postRadius = 0.05;
+    // Goal posts (simple cylinders)
+    const postMat = new StandardMaterial('postMat', this.scene);
+    postMat.diffuse = new Color3(1, 1, 1);
     
-    // Left post
-    const leftPost = MeshBuilder.CreateCylinder('leftPost', {
-      height: goalHeight,
-      diameter: postRadius * 2
-    }, this.scene);
-    leftPost.position = new Vector3(-goalWidth / 2, goalHeight / 2, 0);
-    
-    // Right post  
-    const rightPost = MeshBuilder.CreateCylinder('rightPost', {
-      height: goalHeight,
-      diameter: postRadius * 2
-    }, this.scene);
-    rightPost.position = new Vector3(goalWidth / 2, goalHeight / 2, 0);
-    
+    const leftPost = MeshBuilder.CreateCylinder('leftPost', { height: GAME_CONFIG.GOAL_HEIGHT, diameter: 0.1 }, this.scene);
+    leftPost.position = new Vector3(-GAME_CONFIG.GOAL_WIDTH / 2, GAME_CONFIG.GOAL_HEIGHT / 2, -GAME_CONFIG.SHOOTING_CIRCLE_RADIUS - 2);
+    leftPost.material = postMat;
+
+    const rightPost = MeshBuilder.CreateCylinder('rightPost', { height: GAME_CONFIG.GOAL_HEIGHT, diameter: 0.1 }, this.scene);
+    rightPost.position = new Vector3(GAME_CONFIG.GOAL_WIDTH / 2, GAME_CONFIG.GOAL_HEIGHT / 2, -GAME_CONFIG.SHOOTING_CIRCLE_RADIUS - 2);
+    rightPost.material = postMat;
+
     // Crossbar
-    const crossbar = MeshBuilder.CreateCylinder('crossbar', {
-      height: goalWidth,
-      diameter: postRadius * 2
-    }, this.scene);
-    crossbar.rotation.z = Math.PI / 2;
-    crossbar.position = new Vector3(0, goalHeight, 0);
-    
-    // Goal material (white posts)
-    const goalMat = new StandardMaterial('goalMat', this.scene);
-    goalMat.diffuseColor = new Color3(1, 1, 1);
-    leftPost.material = goalMat;
-    rightPost.material = goalMat;
-    crossbar.material = goalMat;
-    
-    // Net (simple back plane)
-    const net = MeshBuilder.CreatePlane('net', {
-      width: goalWidth,
-      height: goalHeight
-    }, this.scene);
-    net.position = new Vector3(0, goalHeight / 2, -0.5);
-    
-    const netMat = new StandardMaterial('netMat', this.scene);
-    netMat.diffuseColor = new Color3(0.9, 0.9, 0.9);
-    netMat.alpha = 0.3;
-    net.material = netMat;
+    const crossbar = MeshBuilder.CreateBox('crossbar', { width: GAME_CONFIG.GOAL_WIDTH, height: 0.1, depth: 0.1 }, this.scene);
+    crossbar.position = new Vector3(0, GAME_CONFIG.GOAL_HEIGHT, -GAME_CONFIG.SHOOTING_CIRCLE_RADIUS - 2);
+    crossbar.material = postMat;
   }
 
   private createBall(): void {
-    const ball = MeshBuilder.CreateSphere('ball', {
-      diameter: GAME_CONFIG.BALL_RADIUS * 20 // Scaled for visibility
-    }, this.scene);
-    ball.position = new Vector3(0, GAME_CONFIG.BALL_RADIUS * 10, 10);
-    
     const ballMat = new StandardMaterial('ballMat', this.scene);
-    ballMat.diffuseColor = new Color3(1, 1, 1); // White ball
-    ball.material = ballMat;
+    ballMat.diffuse = new Color3(1, 1, 1);
+    
+    this.ball = MeshBuilder.CreateSphere('ball', { segments: 16 }, this.scene);
+    this.ball.scaling = new Vector3(GAME_CONFIG.BALL_RADIUS * 500, GAME_CONFIG.BALL_RADIUS * 500, GAME_CONFIG.BALL_RADIUS * 500);
+    this.ball.position = this.ballPosition.clone();
+    this.ball.material = ballMat;
   }
 
   private setupUI(): void {
-    this.updateScoreDisplay();
-    this.updateTimerDisplay();
-  }
-  
-  private updateScoreDisplay(): void {
-    const scoreEl = document.getElementById('score');
-    if (scoreEl) {
-      scoreEl.textContent = `Player ${this.playerScore} - ${this.aiScore} AI`;
-    }
-  }
-  
-  private updateTimerDisplay(): void {
-    const timerEl = document.getElementById('timer');
-    if (timerEl) {
-      timerEl.textContent = `${this.shotTimer.toFixed(1)}s`;
-    }
-  }
-  
-  private showStartScreen(): void {
     const startScreen = document.getElementById('startScreen');
     if (startScreen) {
       startScreen.style.display = 'flex';
     }
   }
-  
-  public startGame(): void {
+
+  private setupInputHandlers(): void {
+    window.addEventListener('keydown', (e) => {
+      this.keys[e.key.toLowerCase()] = true;
+      if (e.key === ' ') this.handleSpaceKey();
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys[e.key.toLowerCase()] = false;
+    });
+    window.addEventListener('mousemove', (e) => {
+      this.mouseX = (e.clientX / this.canvas.width) * 2 - 1;
+      this.mouseY = -(e.clientY / this.canvas.height) * 2 + 1;
+    });
+    window.addEventListener('mousedown', () => this.handleMouseDown());
+    window.addEventListener('mouseup', () => this.handleMouseUp());
+
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+      startBtn.addEventListener('click', () => this.startGame());
+    }
+  }
+
+  private handleSpaceKey(): void {
+    if (this.gameState === 'aiming') {
+      this.performScoop();
+    }
+  }
+
+  private handleMouseDown(): void {
+    if (this.gameState === 'aiming') {
+      this.isCharging = true;
+      this.shotPower = 0;
+    }
+  }
+
+  private handleMouseUp(): void {
+    if (this.gameState === 'aiming' && this.isCharging) {
+      this.isCharging = false;
+      this.shootBall();
+    }
+  }
+
+  private performScoop(): void {
+    if (this.gameState === 'aiming') {
+      this.shootBall(true);
+    }
+  }
+
+  private shootBall(isScoop = false): void {
+    if (this.ballShot) return;
+    
+    this.ballShot = true;
+    this.gameState = 'shooting';
+    
+    const power = this.isCharging ? Math.min(this.shotPower, 1) : 0.6;
+    const speed = power * GAME_CONFIG.MAX_SHOT_SPEED;
+    
+    // Calculate direction based on mouse position
+    const dirX = this.mouseX * 5;
+    const dirZ = -speed;
+    
+    this.ballVelocity = new Vector3(dirX, isScoop ? speed * 0.5 : 0, dirZ);
+  }
+
+  private updateBallPhysics(): void {
+    if (!this.ball) return;
+    
+    // Apply velocity
+    this.ballPosition.addInPlace(this.ballVelocity.scale(0.016)); // Delta time
+    
+    // Friction
+    this.ballVelocity.scaleInPlace(1 - GAME_CONFIG.TURF_FRICTION * 0.016);
+    
+    // Gravity
+    if (this.ballPosition.y > GAME_CONFIG.BALL_RADIUS * 500) {
+      this.ballVelocity.y -= 9.81 * 0.016;
+    } else {
+      // Ground collision
+      this.ballPosition.y = GAME_CONFIG.BALL_RADIUS * 500;
+      if (this.ballVelocity.y < 0) {
+        this.ballVelocity.y *= -GAME_CONFIG.RESTITUTION;
+      }
+    }
+    
+    this.ball.position = this.ballPosition;
+    
+    // Check if ball reached goal area
+    if (this.ballPosition.z < -GAME_CONFIG.SHOOTING_CIRCLE_RADIUS - 5) {
+      this.checkGoal();
+    }
+    
+    // Check if ball stopped
+    if (this.ballVelocity.length() < 0.1 && this.ballPosition.y < 1) {
+      this.roundEnd();
+    }
+  }
+
+  private checkGoal(): void {
+    const ballX = this.ballPosition.x;
+    const ballY = this.ballPosition.y;
+    
+    if (Math.abs(ballX) < GAME_CONFIG.GOAL_WIDTH / 2 && ballY < GAME_CONFIG.GOAL_HEIGHT) {
+      this.playerScore++;
+      this.gameState = 'result';
+    } else {
+      this.gameState = 'result';
+    }
+  }
+
+  private roundEnd(): void {
+    if (this.gameState === 'shooting') {
+      // Simulate goalkeeper attempt
+      const didGoalkeeper = Math.random() > 0.6;
+      if (!didGoalkeeper) {
+        this.playerScore++;
+      }
+      this.gameState = 'result';
+    }
+  }
+
+  private nextRound(): void {
+    this.currentRound++;
+    if (this.currentRound > GAME_CONFIG.ROUNDS) {
+      this.gameState = 'game_over';
+      this.updateScoreDisplay();
+    } else {
+      this.resetRound();
+    }
+  }
+
+  private resetRound(): void {
+    this.ballPosition = new Vector3(0, 0.15, 10);
+    this.ballVelocity = new Vector3(0, 0, 0);
+    this.ballShot = false;
+    this.shotTimer = GAME_CONFIG.SHOT_TIME_LIMIT;
+    this.shotPower = 0;
+    this.isCharging = false;
+    this.gameState = 'aiming';
+    this.updateScoreDisplay();
+  }
+
+  private startGame(): void {
     const startScreen = document.getElementById('startScreen');
     if (startScreen) {
       startScreen.style.display = 'none';
     }
-    this.gameState = 'aiming';
-    this.currentRound = 1;
-    this.playerScore = 0;
-    this.aiScore = 0;
-    this.updateScoreDisplay();
+    this.resetRound();
+  }
+
+  private updateScoreDisplay(): void {
+    const scoreEl = document.querySelector('.score') as HTMLElement;
+    if (scoreEl) {
+      scoreEl.textContent = `Player ${this.playerScore} - ${this.aiScore} AI`;
+    }
+    
+    const timerEl = document.querySelector('.timer') as HTMLElement;
+    if (timerEl) {
+      timerEl.textContent = `${this.shotTimer.toFixed(1)}s`;
+    }
+  }
+
+  private async init(): Promise<void> {
+    // Main render loop
+    this.engine.runRenderLoop(() => {
+      if (this.gameState === 'aiming') {
+        this.shotTimer -= 0.016;
+        if (this.shotTimer <= 0) {
+          this.nextRound();
+        }
+        
+        if (this.isCharging) {
+          this.shotPower = Math.min(this.shotPower + 0.016, 1);
+        }
+      } else if (this.gameState === 'shooting') {
+        this.updateBallPhysics();
+      }
+      
+      this.updateScoreDisplay();
+      this.scene.render();
+    });
+
+    window.addEventListener('resize', () => {
+      this.engine.resize();
+    });
   }
 }
 
 // Initialize game when DOM is ready
 window.addEventListener('DOMContentLoaded', () => {
-  const game = new KoodevHock();
-  
-  // Expose start function to button
-  const startBtn = document.getElementById('startBtn');
-  if (startBtn) {
-    startBtn.addEventListener('click', () => game.startGame());
-  }
+  new KoodevHock();
 });

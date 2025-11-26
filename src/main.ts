@@ -10,7 +10,7 @@ const FIELD_WIDTH = 55;
 const FIELD_LENGTH = 91.4;
 const GOAL_WIDTH = 3.66;
 const GOAL_HEIGHT = 2.14;
-const BALL_RADIUS = 0.15;
+const BALL_RADIUS = 0.35;
 const TIMEOUT_SECONDS = 8;
 const TOTAL_ROUNDS = 5;
 
@@ -22,6 +22,8 @@ interface GameState {
   timer: number;
   isGameOver: boolean;
 }
+
+let gameInstance: KoodevHock | null = null;
 
 class KoodevHock {
   private canvas: HTMLCanvasElement;
@@ -79,16 +81,18 @@ class KoodevHock {
   }
 
   setupCamera() {
-    const cam = new ArcRotateCamera('cam', -Math.PI/2, Math.PI/3, 15, new Vector3(0, 1, 20), this.scene);
-    cam.lowerRadiusLimit = 10;
-    cam.upperRadiusLimit = 30;
+    const cam = new ArcRotateCamera('cam', -Math.PI/2, Math.PI/3.5, 12, new Vector3(0, 0, 17), this.scene);
+    cam.lowerRadiusLimit = 8;
+    cam.upperRadiusLimit = 25;
+    cam.lowerBetaLimit = 0.1;
+    cam.upperBetaLimit = Math.PI/2.2;
     cam.attachControl(this.canvas, true);
   }
 
   createEnvironment() {
     const ground = MeshBuilder.CreateGround('ground', { width: FIELD_WIDTH, height: FIELD_LENGTH }, this.scene);
     const groundMat = new StandardMaterial('groundMat', this.scene);
-    groundMat.diffuseColor = new Color3(0.1, 0.4, 0.7);
+    groundMat.diffuseColor = new Color3(0.1, 0.5, 0.2);
     ground.material = groundMat;
     new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0, friction: 0.8 }, this.scene);
   }
@@ -125,9 +129,10 @@ class KoodevHock {
     if (this.ball) this.ball.dispose();
     if (this.ballAggregate) this.ballAggregate.dispose();
     this.ball = MeshBuilder.CreateSphere('ball', { diameter: BALL_RADIUS*2 }, this.scene);
-    this.ball.position = new Vector3(0, BALL_RADIUS, 10);
+    this.ball.position = new Vector3(0, BALL_RADIUS, 15);
     const mat = new StandardMaterial('ballMat', this.scene);
-    mat.diffuseColor = Color3.White();
+    mat.diffuseColor = new Color3(1, 1, 0);
+    mat.emissiveColor = new Color3(0.3, 0.3, 0);
     this.ball.material = mat;
     this.ballAggregate = new PhysicsAggregate(this.ball, PhysicsShapeType.SPHERE, { mass: 0.16, friction: 0.4, restitution: 0.5 }, this.scene);
     this.goalTrigger.actionManager.registerAction(
@@ -146,14 +151,16 @@ class KoodevHock {
           if (pickInfo?.hit && !this.state.shotTaken) {
             this.dragStartPoint = pickInfo.pickedPoint;
             this.isDragging = true;
-            document.getElementById('power-container')!.style.display = 'block';
+            const powerContainer = document.getElementById('power-container');
+            if (powerContainer) powerContainer.style.display = 'block';
           }
           break;
         case PointerEventTypes.POINTERMOVE:
           if (this.isDragging && this.dragStartPoint && pickInfo?.pickedPoint) {
             const dist = Vector3.Distance(this.dragStartPoint, pickInfo.pickedPoint);
             this.power = Math.min(dist / 5, 1);
-            document.getElementById('power-bar')!.style.width = `${this.power * 100}%`;
+            const powerBar = document.getElementById('power-bar');
+            if (powerBar) powerBar.style.width = `${this.power * 100}%`;
           }
           break;
         case PointerEventTypes.POINTERUP:
@@ -162,7 +169,8 @@ class KoodevHock {
           }
           this.isDragging = false;
           this.dragStartPoint = null;
-          document.getElementById('power-container')!.style.display = 'none';
+          const powerContainer = document.getElementById('power-container');
+          if (powerContainer) powerContainer.style.display = 'none';
           break;
       }
     });
@@ -172,7 +180,6 @@ class KoodevHock {
     if (this.state.shotTaken) return;
     this.state.shotTaken = true;
     
-    // Hide instructions after shooting
     const shootHint = document.getElementById('shoot-hint');
     const gameInstructions = document.getElementById('game-instructions');
     if (shootHint) shootHint.style.display = 'none';
@@ -186,26 +193,25 @@ class KoodevHock {
     this.ballAggregate.body.applyImpulse(impulse, this.ball.getAbsolutePosition());
   }
 
-  startRound() {
+  public startRound() {
     this.resetBall();
     this.state.shotTaken = false;
     this.state.timer = TIMEOUT_SECONDS;
     this.goalie.position.x = 0;
     
-    // Show instructions at start of round
     const shootHint = document.getElementById('shoot-hint');
     const gameInstructions = document.getElementById('game-instructions');
     if (shootHint) shootHint.style.display = 'block';
     if (gameInstructions) gameInstructions.style.display = 'block';
     
-    // Hide any previous message
     const messageBox = document.getElementById('message-box');
     if (messageBox) messageBox.style.display = 'none';
     
     this.updateUI();
     this.timerInterval = setInterval(() => {
       this.state.timer--;
-      document.getElementById('timer')!.innerText = this.state.timer.toString();
+      const timerEl = document.getElementById('timer');
+      if (timerEl) timerEl.innerText = this.state.timer.toString();
       if (this.state.timer <= 0) {
         this.endRound('MISS');
       }
@@ -216,24 +222,13 @@ class KoodevHock {
     clearInterval(this.timerInterval);
     if (this.state.isGameOver) return;
     this.state.scores.home++;
-    this.updateUI();
-    setTimeout(() => {
-      this.state.round++;
-      if (this.state.round > TOTAL_ROUNDS) {
-        this.state.isGameOver = true;
-        alert(`Game Over! Score: ${this.state.scores.home} - ${this.state.scores.away}`);
-        location.reload();
-      } else {
-        this.startRound();
-      }
-    }, 2000);
+    this.endRound('GOAL');
   }
 
   endRound(result: 'GOAL' | 'MISS') {
     clearInterval(this.timerInterval);
     if (this.state.isGameOver) return;
     
-    // Show result message
     const messageBox = document.getElementById('message-box');
     const messageText = document.getElementById('message-text');
     if (messageBox && messageText) {
@@ -242,7 +237,6 @@ class KoodevHock {
       messageBox.className = result === 'GOAL' ? 'goal' : 'miss';
     }
     
-    if (result === 'GOAL') this.state.scores.home++;
     this.updateUI();
     setTimeout(() => {
       this.state.round++;
@@ -268,8 +262,10 @@ class KoodevHock {
   }
 
   updateUI() {
-    document.getElementById('score-home')!.innerText = this.state.scores.home.toString();
-    document.getElementById('score-away')!.innerText = this.state.scores.away.toString();
+    const scoreHome = document.getElementById('score-home');
+    const scoreAway = document.getElementById('score-away');
+    if (scoreHome) scoreHome.innerText = this.state.scores.home.toString();
+    if (scoreAway) scoreAway.innerText = this.state.scores.away.toString();
     const dots = document.getElementById('round-indicators');
     if (dots) {
       dots.innerHTML = '';
@@ -284,6 +280,9 @@ class KoodevHock {
 
 (window as any).startGame = () => {
   document.getElementById('overlay-screen')?.classList.add('hidden');
+  if (gameInstance) {
+    gameInstance.startRound();
+  }
 };
 
-new KoodevHock();
+gameInstance = new KoodevHock();

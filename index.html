@@ -55,7 +55,38 @@
       }
       button:hover { transform: skew(-10deg) scale(1.1); background: white; color: var(--secondary); }
       .hidden { opacity: 0; pointer-events: none; }
-      #instructions { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #888; font-size: 0.9rem; }
+      #game-instructions {
+        position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
+        background: var(--glass); padding: 20px 40px; border-radius: 15px;
+        border: 2px solid var(--primary); text-align: center; display: none;
+      }
+      #game-instructions h3 {
+        color: var(--primary); margin: 0 0 10px 0; font-size: 1.3rem;
+        animation: pulse 1.5s infinite;
+      }
+      #game-instructions p { color: white; margin: 5px 0; font-size: 1rem; }
+      #game-instructions .step { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+      #game-instructions .step-num {
+        background: var(--primary); color: black; width: 24px; height: 24px;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        font-weight: bold; font-size: 0.9rem;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      #shoot-hint {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        color: var(--primary); font-size: 2rem; font-weight: bold;
+        text-shadow: 0 0 20px var(--primary); animation: pulse 1s infinite;
+        display: none; pointer-events: none;
+      }
+      #message-box {
+        position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+        background: var(--glass); padding: 20px 50px; border-radius: 10px;
+        border: 3px solid var(--primary); display: none;
+      }
+      #message-box span { color: white; font-size: 2rem; font-weight: bold; }
     </style>
   </head>
   <body>
@@ -76,15 +107,22 @@
         </div>
       </div>
       <div class="rounds" id="round-indicators"></div>
+      <div id="shoot-hint">CLICK ON FIELD TO SHOOT!</div>
+      <div id="game-instructions">
+        <h3>HOW TO SHOOT</h3>
+        <div class="step"><span class="step-num">1</span><p>Click on the blue field</p></div>
+        <div class="step"><span class="step-num">2</span><p>Drag back to aim & power up</p></div>
+        <div class="step"><span class="step-num">3</span><p>Release to shoot at goal!</p></div>
+      </div>
       <div class="power-container" id="power-container">
         <div class="power-bar" id="power-bar"></div>
       </div>
+      <div id="message-box"><span id="message-text"></span></div>
       <div id="overlay-screen">
         <h1>Koodev Hock</h1>
         <p>Field Hockey Penalty Shootout</p>
         <button id="start-btn" onclick="window.startGame()">START GAME</button>
       </div>
-      <div id="instructions">Click on the ground, drag back to aim & power up, release to shoot</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

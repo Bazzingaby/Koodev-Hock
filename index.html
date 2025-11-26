@@ -1,44 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Koodev Hock - Field Hockey Penalty Shootout</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
-    #gameCanvas { width: 100%; height: 100%; display: block; }
-    #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; font-family: Arial, sans-serif; }
-    #timer { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 48px; color: white; text-shadow: 2px 2px 4px black; }
-    #score { position: absolute; top: 20px; left: 20px; font-size: 24px; color: white; text-shadow: 1px 1px 2px black; }
-    #power-bar { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); width: 200px; height: 20px; background: rgba(0,0,0,0.5); border: 2px solid white; border-radius: 10px; }
-    #power-fill { height: 100%; width: 0%; background: linear-gradient(90deg, green, yellow, red); border-radius: 8px; }
-    #message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 36px; color: white; text-shadow: 2px 2px 4px black; text-align: center; }
-    #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: auto; }
-    #start-screen h1 { font-size: 64px; color: #00ff00; margin-bottom: 20px; }
-    #start-screen p { font-size: 24px; color: white; margin: 10px 0; }
-    #start-btn { margin-top: 30px; padding: 15px 40px; font-size: 24px; background: #00ff00; border: none; border-radius: 10px; cursor: pointer; }
-    #start-btn:hover { background: #00cc00; }
-    #instructions { max-width: 600px; text-align: center; }
-  </style>
-</head>
-<body>
-  <canvas id="gameCanvas"></canvas>
-  <div id="ui">
-    <div id="timer">8.00</div>
-    <div id="score">You: 0 | GK: 0</div>
-    <div id="power-bar"><div id="power-fill"></div></div>
-    <div id="message"></div>
-    <div id="start-screen">
-      <h1>KOODEV HOCK</h1>
-      <p>Field Hockey Penalty Shootout</p>
-      <div id="instructions">
-        <p>WASD/Arrows - Move | Mouse - Aim</p>
-        <p>Hold Left Click - Charge Shot</p>
-        <p>Release - Shoot | Space - Scoop</p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Koodev Hock - Shootout</title>
+    <style>
+      :root {
+        --primary: #00ff88;
+        --secondary: #1a1a2e;
+        --accent: #e94560;
+        --glass: rgba(22, 33, 62, 0.9);
+      }
+      body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background: #0a0a0f; }
+      #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; }
+      #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+      .scoreboard {
+        display: flex; justify-content: center; align-items: flex-start; margin-top: 20px;
+        font-weight: 800; text-transform: uppercase; letter-spacing: 2px;
+      }
+      .score-box {
+        background: var(--glass); padding: 10px 40px; transform: skew(-20deg);
+        border-bottom: 4px solid var(--primary); display: flex; gap: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      }
+      .score-content { transform: skew(20deg); display: flex; align-items: center; gap: 15px; }
+      .team-name { font-size: 1.2rem; color: #ccc; }
+      .score-num { font-size: 2rem; color: white; }
+      .timer-box {
+        background: var(--accent); padding: 5px 20px; margin-left: 10px; transform: skew(-20deg);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .timer-num { transform: skew(20deg); font-size: 1.5rem; font-weight: bold; color: white; }
+      .rounds { position: absolute; top: 80px; width: 100%; display: flex; justify-content: center; gap: 10px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: #444; border: 2px solid #666; }
+      .dot.active { background: white; box-shadow: 0 0 10px white; }
+      .dot.goal { background: var(--primary); border-color: var(--primary); }
+      .power-container {
+        position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+        width: 300px; height: 30px; background: rgba(0,0,0,0.6); border-radius: 15px;
+        overflow: hidden; display: none;
+      }
+      .power-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.1s; }
+      #overlay-screen {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8);
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        pointer-events: auto;
+      }
+      h1 { font-size: 4rem; color: var(--primary); margin: 0; font-style: italic; text-transform: uppercase; }
+      #overlay-screen p { font-size: 1.5rem; color: white; margin: 10px 0 30px; }
+      button {
+        margin-top: 30px; padding: 15px 50px; font-size: 1.5rem; font-weight: bold;
+        background: var(--primary); border: none; transform: skew(-10deg); cursor: pointer;
+        transition: transform 0.2s, background 0.2s;
+      }
+      button:hover { transform: skew(-10deg) scale(1.1); background: white; color: var(--secondary); }
+      .hidden { opacity: 0; pointer-events: none; }
+      #instructions { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #888; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <div id="ui-layer">
+      <div class="scoreboard">
+        <div class="score-box">
+          <div class="score-content">
+            <span class="team-name">YOU</span>
+            <span class="score-num" id="score-home">0</span>
+            <span>-</span>
+            <span class="score-num" id="score-away">0</span>
+            <span class="team-name">CPU</span>
+          </div>
+        </div>
+        <div class="timer-box">
+          <span class="timer-num" id="timer">8.0</span>
+        </div>
       </div>
-   <button id="start-btn" onclick="window.startGame && window.startGame()">START GAME</button>    </div>
-  </div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
+      <div class="rounds" id="round-indicators"></div>
+      <div class="power-container" id="power-container">
+        <div class="power-bar" id="power-bar"></div>
+      </div>
+      <div id="overlay-screen">
+        <h1>Koodev Hock</h1>
+        <p>Field Hockey Penalty Shootout</p>
+        <button id="start-btn" onclick="window.startGame()">START GAME</button>
+      </div>
+      <div id="instructions">Click on the ground, drag back to aim & power up, release to shoot</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

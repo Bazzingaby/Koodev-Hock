@@ -6,8 +6,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
-    minify: 'terser',
-    rollupOptions: {
+        rollupOptions: {
       output: {
         manualChunks: {
           babylon: ['@babylonjs/core', '@babylonjs/materials', '@babylonjs/loaders'],

@@ -6,10 +6,11 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
-        rollupOptions: {
+    target: 'esnext',
+    rollupOptions: {
       output: {
         manualChunks: {
-          babylon: ['@babylonjs/core', '@babylonjs/materials', '@babylonjs/loaders'],
+          babylon: ['@babylonjs/core', '@babylonjs/loaders', '@babylonjs/gui'],
           physics: ['@babylonjs/havok']
         }
       }
@@ -20,6 +21,6 @@ export default defineConfig({
     open: true
   },
   optimizeDeps: {
-    include: ['@babylonjs/core', '@babylonjs/havok', '@babylonjs/materials', '@babylonjs/loaders']
+    include: ['@babylonjs/core', '@babylonjs/havok', '@babylonjs/loaders', '@babylonjs/gui']
   }
 });
